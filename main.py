@@ -1,6 +1,11 @@
 """
 Monster Rancher Optimisation: Youngest Max Stats Monster
-This program takes the starting stats of a monster and optimises to find the fewest weeks in which it can maximise all its stats. A training program (or training programs) will be provided.
+
+This program takes the maximum starting stats of a monster alongside data on stat gains from fights in D, B and S ranks, and finds the fewest weeks in which all the monster's stats may be maximised. A training programme (or training programmes) is provided in the output. Use it wisely.
+
+The problem is framed as an integer linear program, with the objective of minimising the total number of weeks spent in training. At least one week must be spent in each of D and B ranks. In order to complete training, all the monster's stats must be maxed out at 999. This program is solved by creating and optimising a model using Gurobipy.
+
+This question was originally handed to me by Tsmuji (jack-cooper), along with a manually calculated upper bound on the number of weeks. The data used was kindly provided by SmilingFaces96.
 """
 
 import pandas as pd
@@ -11,20 +16,19 @@ from gurobipy import GRB
 
 try:
     # Read data from csv files into dataframes
+    # Pandas dataframes provide convenient methods for data handling
 
-    # (Highest possible?) starting values for stats
+    # Highest possible starting values for stats
     initial_stat_values = pd.read_csv('starting-data.csv')
 
-    # Input stat gains for all 164 possible weeks in D rank
+    # Stat gains data for all 164 possible weeks in D rank
     D_rank_weeks_data = pd.read_csv('D-rank-data.csv')
 
-    # Input stat gains for all 164 possible weeks in B rank
+    # Stat gains data for all 164 possible weeks in B rank
     B_rank_weeks_data = pd.read_csv('B-rank-data.csv')
 
-    # Input stat gains for all 164 possible weeks in S rank
+    # Stat gains data for all 164 possible weeks in S rank
     S_rank_weeks_data = pd.read_csv('S-rank-data.csv')
-
-    # Create convenient tuplelists and dictionary for adding vars and constraints
 
     # List of rank names
     rank_names = list(["d", "b", "s"])
@@ -32,13 +36,15 @@ try:
     # List of stat names
     stat_names = list(initial_stat_values.columns)
 
+    # Convenient tuplelist and dictionary for adding vars and constraints
+
     # Tuplelist to contain labels for possible weeks in each rank
     week_labels = gp.tuplelist()
 
     # Dictionary to contain all possible stat gains
     stat_gains = {}
 
-    # Check all ranks have the same number of possible weeks
+    # Check all ranks have the same total number of possible weeks
     weeks_in_rank = S_rank_weeks_data.shape[0]
     assert (D_rank_weeks_data.shape[0] ==
             B_rank_weeks_data.shape[0] == weeks_in_rank)
@@ -54,13 +60,17 @@ try:
             for stat in stat_names:
 
                 # Add stat gain data to dictionary
+                # Data is indexed by week label and stat name
                 stat_gain_label = (rank, week, stat)
+
+                # Data fetched from appropriate dataframe
                 if rank == "s":
                     stat_gain = S_rank_weeks_data.at[week, stat]
                 elif rank == "b":
                     stat_gain = B_rank_weeks_data.at[week, stat]
                 elif rank == "d":
                     stat_gain = D_rank_weeks_data.at[week, stat]
+
                 stat_gains[stat_gain_label] = stat_gain
 
     # The model
@@ -84,6 +94,7 @@ try:
     model.addConstr(week_counts.sum("b", '*') >= 1, name="B_rank_constraint")
 
     # Add maximised stats constraints to the model
+    # Each stat is maximised when total gain from training exceeds the difference between 999 and the stat starting value
     index = 1
     for stat in stat_names:
         current_stat_gains = {}
@@ -91,31 +102,34 @@ try:
         for (rank, week) in week_labels:
             current_stat_gains[rank, week] = stat_gains[rank, week, stat]
 
-        # Stats start at starting values and are maximised when they reach 999
         model.addConstr((week_counts.prod(current_stat_gains)
                          >= 999 - initial_stat_values.at[0, stat]), name="max_stats_constraint")
         print(
             f"{index}: {stat} constraint added. ({999 - initial_stat_values.at[0, stat]})")
         index += 1
 
-    # Negative counts of weeks are not possible. Note that variables are assumed by Gurobi to be non-negative
+    # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
     # TODO: Write constraints to ensure this?
 
-    # Solve the model
+    # Optimise the model
     model.optimize()
 
-    # Print training programme options
+    # Output to terminal
     if model.Status == GRB.OPTIMAL:
 
-        # Check vs manually calculated lower bound (23 weeks)
+        # Check objective vs manually calculated lower bound (23 weeks)
         objective = int(model.getObjective().getValue())
         assert (objective <= 23)
 
+        # Display optimal objective value
         print(
             f"\nThe youngest possible max stats monster is {objective} weeks.")
 
         # TODO: Quantify 'overtraining'?
 
+        # Breakdown of solution (training programme)
+
+        # Get details of the solution
         count = model.getAttr('X', week_counts)
 
         # Outline D rank weeks
