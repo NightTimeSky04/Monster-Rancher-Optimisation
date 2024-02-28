@@ -133,7 +133,7 @@ try:
         count = model.getAttr('X', week_counts)
 
         # Outline D rank weeks
-        d_total = count.sum("d", '*')
+        d_total = int(count.sum("d", '*').getValue())
         print(
             f"\nTraining programme breakdown:\n\n--- D rank ---\nTotal weeks: {d_total}\n")
         for (rank, week) in week_labels.select("d", '*'):
@@ -146,7 +146,7 @@ try:
                 print(description)
 
         # Outline B rank weeks
-        b_total = count.sum("b", '*')
+        b_total = int(count.sum("b", '*').getValue())
         print(
             f"\n--- B rank ---\nTotal weeks: {b_total}\n")
         for (rank, week) in week_labels.select("b", '*'):
@@ -159,7 +159,7 @@ try:
                 print(description)
 
         # Outline S rank weeks
-        s_total = count.sum("s", '*')
+        s_total = int(count.sum("s", '*').getValue())
         print(
             f"\n--- S rank ---\nTotal weeks: {s_total}\n")
         for (rank, week) in week_labels.select("s", '*'):
