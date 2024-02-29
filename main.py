@@ -93,18 +93,10 @@ try:
 
     # Add maximised stats constraints to the model
     # Each stat is maximised when total gain from training exceeds the difference between 999 and the stat starting value
-    index = 1
-    for stat in stat_names:
-        current_stat_gains = {}
+    model.addConstr((week_counts.prod(Lif_gains) >= 999 -
+                    initial_stat_values.at[0, "Lif"]), name="max_stats_constraint")
 
-        for (rank, week) in week_labels:
-            current_stat_gains[rank, week] = stat_gains[rank, week, stat]
-
-        model.addConstr((week_counts.prod(current_stat_gains)
-                         >= 999 - initial_stat_values.at[0, stat]), name="max_stats_constraint")
-        print(
-            f"{index}: {stat} constraint added. ({999 - initial_stat_values.at[0, stat]})")
-        index += 1
+    # 6 of these
 
     # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
     # TODO: Write constraints to ensure this?
