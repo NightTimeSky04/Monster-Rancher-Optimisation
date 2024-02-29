@@ -1,5 +1,5 @@
 """
-Monster Rancher Optimisation: Youngest Max Stats Monster
+Monster Rancher Optimisation: Youngest Max Stats Monster (Monster Rancher 2)
 
 This program takes the maximum starting stats of a monster alongside data on stat gains from fights in D, B and S ranks, and finds the fewest weeks in which all the monster's stats may be maximised. A training programme (or training programmes) is provided in the output. Use it wisely.
 
