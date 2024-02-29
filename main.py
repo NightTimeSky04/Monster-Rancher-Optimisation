@@ -53,25 +53,23 @@ try:
     for rank in rank_names:
         for week in range(0, weeks_in_rank):
 
-            # Add week labels to tuplelist
-            week_label = (rank, week)
-            week_labels.append(week_label)
+            week_data = []
 
             for stat in stat_names:
 
-                # Add stat gain data to dictionary
-                # Data is indexed by week label and stat name
-                stat_gain_label = (rank, week, stat)
-
                 # Data fetched from appropriate dataframe
                 if rank == "s":
-                    stat_gain = S_rank_weeks_data.at[week, stat]
+                    week_data.append(S_rank_weeks_data.at[week, stat])
                 elif rank == "b":
-                    stat_gain = B_rank_weeks_data.at[week, stat]
+                    week_data.append(B_rank_weeks_data.at[week, stat])
                 elif rank == "d":
-                    stat_gain = D_rank_weeks_data.at[week, stat]
+                    week_data.append(D_rank_weeks_data.at[week, stat])
 
-                stat_gains[stat_gain_label] = stat_gain
+                stat_gains[rank, week] = week_data
+
+    # Multidict time
+    week_labels, Lif_gains, Pow_gains, Int_gains, Ski_gains, Spd_gains, Def_gains = gp.multidict(
+        stat_gains)
 
     # The model
 
