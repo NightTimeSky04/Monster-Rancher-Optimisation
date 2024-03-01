@@ -9,170 +9,156 @@ This question was originally handed to me by Tsmuji (jack-cooper), along with a 
 """
 
 import pandas as pd
-import numpy as np
 
 import gurobipy as gp
 from gurobipy import GRB
 
-try:
-    # Read data from csv files into dataframes
-    # Pandas dataframes provide convenient methods for data handling
 
-    # Highest possible starting values for stats
-    initial_stat_values = pd.read_csv('starting-data.csv')
+class MonsterTraining:
+    def __init__(self, initial_stats_file: str, rank_names: list):
+        if initial_stats_file[len(initial_stats_file) - 4:] == ".csv":
+            # Starting stats for the monster
+            self.initial_stats = pd.read_csv(initial_stats_file)
 
-    # Stat gains data for all 164 possible weeks in D rank
-    D_rank_weeks_data = pd.read_csv('D-rank-data.csv')
+            # List of stat names
+            self.stat_names = list(self.initial_stats.columns)
 
-    # Stat gains data for all 164 possible weeks in B rank
-    B_rank_weeks_data = pd.read_csv('B-rank-data.csv')
+            # List of ranks specified in input
+            self.rank_names = rank_names
 
-    # Stat gains data for all 164 possible weeks in S rank
-    S_rank_weeks_data = pd.read_csv('S-rank-data.csv')
+            self.training_stats_by_rank = self.get_training_stats_from_files()
+            self.stat_gains = self.get_stat_gains_as_dict()
 
-    # List of rank names
-    rank_names = list(["d", "b", "s"])
+            # List of labels for available weeks
+            # Arbitrary which stat gain dict this originates from
+            self.week_labels, _ = gp.multidict(
+                self.stat_gains[self.stat_names[0]])
+        else:
+            print(
+                "\nERROR: File containing initial stats data must have the extension '.csv'.\n")
 
-    # List of stat names
-    stat_names = list(initial_stat_values.columns)
+    def get_stat_gains_as_dict(self):
+        # Reorganisation of stat gain data for convenience when adding variables and constraints to the model
 
-    # Convenient tuplelist and dictionary for adding vars and constraints
+        # Dictionary to contain all stat gain data dictionaries, indexed by stat name
+        stat_gains = {}
 
-    # Tuplelist to contain labels for possible weeks in each rank
-    week_labels = gp.tuplelist()
+        for stat in self.stat_names:
+            stat_gains_by_week = {}
 
-    # Dictionary to contain all possible stat gains
-    stat_gains = {}
+            # Inner dictionaries containing data indexed by rank name and week id
+            for rank in self.rank_names:
+                weeks_in_rank = self.training_stats_by_rank[rank].shape[0]
 
-    # Check all ranks have the same total number of possible weeks
-    weeks_in_rank = S_rank_weeks_data.shape[0]
-    assert (D_rank_weeks_data.shape[0] ==
-            B_rank_weeks_data.shape[0] == weeks_in_rank)
+                for week in range(0, weeks_in_rank):
+                    # Data pulled from appropriate dataframe of imported data
+                    stat_gains_by_week[rank,
+                                       week] = self.training_stats_by_rank[rank].at[week, stat]
 
-    # Populate tuplelist and dictionary
-    for rank in rank_names:
-        for week in range(0, weeks_in_rank):
+            stat_gains[stat] = stat_gains_by_week
 
-            # Add week labels to tuplelist
-            week_label = (rank, week)
-            week_labels.append(week_label)
+        return stat_gains
 
-            for stat in stat_names:
+    def get_training_stats_from_files(self):
+        # Import possible stat gain combinations from files
 
-                # Add stat gain data to dictionary
-                # Data is indexed by week label and stat name
-                stat_gain_label = (rank, week, stat)
+        # Dictionary to contain all imported stat gain data
+        # Indexed by rank as csv files containing data are organised by rank
+        training_stats_by_rank = {}
 
-                # Data fetched from appropriate dataframe
-                if rank == "s":
-                    stat_gain = S_rank_weeks_data.at[week, stat]
-                elif rank == "b":
-                    stat_gain = B_rank_weeks_data.at[week, stat]
-                elif rank == "d":
-                    stat_gain = D_rank_weeks_data.at[week, stat]
+        for rank in self.rank_names:
+            # Read data from csv files into dataframes
+            # Pandas dataframes provide convenient methods for data handling
+            filename = rank.upper() + "-rank-data.csv"
+            training_data = pd.read_csv(filename)
+            training_stats_by_rank[rank] = training_data
 
-                stat_gains[stat_gain_label] = stat_gain
+        return training_stats_by_rank
 
-    # The model
-
-    # Initialise model
-    model = gp.Model("youngest_max_stats_monster")
-
-    # Add variables to the model
-    # Each variable represents a count of occurrances of a particular week in the monster's training
-    # All possible weeks in D, B and S rank are considered
-    # Each week has a unique set of stat gains
-    week_counts = model.addVars(week_labels, vtype=GRB.INTEGER, name="count")
-
-    # Add objective function to the model
-    # Objective is to minimise total number of weeks
-    model.setObjective(week_counts.sum(), GRB.MINIMIZE)
-
-    # Add rank constraints to the model
-    # Monsters must spend at least 1 week at D rank and 1 week at B rank on their way to S rank
-    model.addConstr(week_counts.sum("d", '*') >= 1, name="D_rank_constraint")
-    model.addConstr(week_counts.sum("b", '*') >= 1, name="B_rank_constraint")
-
-    # Add maximised stats constraints to the model
-    # Each stat is maximised when total gain from training exceeds the difference between 999 and the stat starting value
-    index = 1
-    for stat in stat_names:
-        current_stat_gains = {}
-
-        for (rank, week) in week_labels:
-            current_stat_gains[rank, week] = stat_gains[rank, week, stat]
-
-        model.addConstr((week_counts.prod(current_stat_gains)
-                         >= 999 - initial_stat_values.at[0, stat]), name="max_stats_constraint")
-        print(
-            f"{index}: {stat} constraint added. ({999 - initial_stat_values.at[0, stat]})")
-        index += 1
-
-    # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
-    # TODO: Write constraints to ensure this?
-
-    # Optimise the model
-    model.optimize()
-
-    # Output to terminal
-    if model.Status == GRB.OPTIMAL:
-
-        # Check objective vs manually calculated lower bound (23 weeks)
-        objective = int(model.getObjective().getValue())
-        assert (objective <= 23)
-
+    def print_output(self):
         # Display optimal objective value
         print(
-            f"\nThe youngest possible max stats monster is {objective} weeks.")
+            f"\nThe youngest possible max stats monster is {self.objective} weeks.")
 
-        # TODO: Quantify 'overtraining'?
+        # Display training programme
+        self.print_training_programme()
 
-        # Breakdown of solution (training programme)
+    def print_training_programme(self):
 
-        # Get details of the solution
-        count = model.getAttr('X', week_counts)
+        # Obtain counts of possible weeks in the solution
+        self.count = self.model.getAttr('X', self.week_counts)
 
-        # Outline D rank weeks
-        d_total = int(count.sum("d", '*').getValue())
-        print(
-            f"\nTraining programme breakdown:\n\n--- D rank ---\nTotal weeks: {d_total}\n")
-        for (rank, week) in week_labels.select("d", '*'):
-            if count[rank, week] > 0:
-                print(
-                    f"Week {week}: {int(count[rank, week])}")
-                description = ""
-                for stat in stat_names:
-                    description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                print(description)
+        for rank in self.rank_names:
+            # Total number of weeks spent in each rank
+            weeks_trained = int(self.count.sum(rank, '*').getValue())
+            print(
+                f"\n--- {rank.upper()} rank ---\nTotal weeks: {weeks_trained}\n")
 
-        # Outline B rank weeks
-        b_total = int(count.sum("b", '*').getValue())
-        print(
-            f"\n--- B rank ---\nTotal weeks: {b_total}\n")
-        for (rank, week) in week_labels.select("b", '*'):
-            if count[rank, week] > 0:
-                print(
-                    f"Week {week}: {int(count[rank, week])}")
-                description = ""
-                for stat in stat_names:
-                    description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                print(description)
+            # Week ID alongside the number of repetitions of that week, discarding unused weeks
+            for (rank, week) in self.week_labels.select(rank, '*'):
+                if self.count[rank, week] > 0:
+                    print(f"Week {week}: {int(self.count[rank, week])}")
 
-        # Outline S rank weeks
-        s_total = int(count.sum("s", '*').getValue())
-        print(
-            f"\n--- S rank ---\nTotal weeks: {s_total}\n")
-        for (rank, week) in week_labels.select("s", '*'):
-            if count[rank, week] > 0:
-                print(
-                    f"Week {week}: {int(count[rank, week])}")
-                description = ""
-                for stat in stat_names:
-                    description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                print(description)
+                    # Outline of stat gains in each week
+                    description = ""
+                    for stat in self.stat_names:
+                        description += f"   {stat}: {self.stat_gains[stat][rank, week]}"
 
-except gp.GurobiError as e:
-    print('Error code ' + str(e.errno) + ': ' + str(e))
+                    print(description)
 
-except AttributeError:
-    print('Encountered an attribute error')
+    def youngest_max_stats_monster(self, upper_bound=0):
+        try:
+            # Initialise model
+            self.model = gp.Model("youngest_max_stats_monster")
+
+            # Add variables to the model
+            # Each variable represents a count of occurrances of a particular week in the monster's training
+            # All possible weeks in input data are considered
+            self.week_counts = self.model.addVars(
+                self.week_labels, vtype=GRB.INTEGER, name="count")
+
+            # Add objective function to the model
+            # Objective is to minimise total number of weeks
+            self.model.setObjective(self.week_counts.sum(), GRB.MINIMIZE)
+
+            # Add rank constraints to the model
+            # Monsters must spend at least 1 week at each specified on their way to S rank
+            self.model.addConstrs((self.week_counts.sum(rank, '*') >=
+                                   1 for rank in self.rank_names[:len(self.rank_names) - 1]), name="rank_constraints")
+
+            # Add maximised stats constraints to the model
+            # Each stat is maximised when total gain from training exceeds the difference between 999 and the stat starting value
+            self.model.addConstrs((self.week_counts.prod(
+                self.stat_gains[stat]) >= 999 - self.initial_stats.at[0, stat] for stat in self.stat_names), name="max_stats_constraints")
+
+            # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
+            # TODO: Write constraints to ensure this?
+
+            # Optimise the model
+            self.model.optimize()
+
+            # Perform checks on solution
+            if self.model.Status == GRB.OPTIMAL:
+
+                # Check objective vs an upper bound (if specified)
+                if upper_bound > 0:
+                    self.objective = int(self.model.getObjective().getValue())
+                    assert (self.objective <= upper_bound)
+
+            else:
+                print("\nNo optimal solutions found.")
+
+            # TODO: Quantify 'overtraining'?
+
+            # Display details of the solution
+            self.print_output()
+
+        except gp.GurobiError as e:
+            print('Error code ' + str(e.errno) + ': ' + str(e))
+
+        except AttributeError:
+            print('Encountered an attribute error')
+
+
+youngest_max_stats_monster = MonsterTraining(
+    "starting-data.csv", ["d", "b", "s"]).youngest_max_stats_monster(upper_bound=23)
