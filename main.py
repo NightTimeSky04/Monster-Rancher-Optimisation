@@ -70,96 +70,78 @@ class MonsterTraining:
 
         return training_stats_by_rank
 
+    def print_output(self):
+        if self.model.Status == GRB.OPTIMAL:
+
+            # Check objective vs manually calculated lower bound (23 weeks)
+            self.objective = int(self.model.getObjective().getValue())
+            assert (self.objective <= 23)
+
+            # Display optimal objective value
+            print(
+                f"\nThe youngest possible max stats monster is {self.objective} weeks.")
+
+            # Breakdown of solution (training programme)
+            # Get details of the solution
+            self.count = self.model.getAttr('X', self.week_counts)
+
+            for rank in self.rank_names:
+                weeks_trained = int(self.count.sum(rank, '*').getValue())
+                print(
+                    f"\n--- {rank.upper()} rank ---\nTotal weeks: {weeks_trained}\n")
+
+                for (rank, week) in self.week_labels.select(rank, '*'):
+                    if self.count[rank, week] > 0:
+                        print(f"Week {week}: {int(self.count[rank, week])}")
+                        description = ""
+                        for stat in self.stat_names:
+                            description += f"   {stat}: {self.stat_gains[stat][rank, week]}"
+                        print(description)
+
     def youngest_max_stats_monster(self):
         try:
             # Initialise model
-            model = gp.Model("youngest_max_stats_monster")
+            self.model = gp.Model("youngest_max_stats_monster")
 
             # Add variables to the model
             # Each variable represents a count of occurrances of a particular week in the monster's training
             # All possible weeks in D, B and S rank are considered
             # Each week has a unique set of stat gains
-            week_counts = model.addVars(
+            self.week_counts = self.model.addVars(
                 self.week_labels, vtype=GRB.INTEGER, name="count")
 
             # Add objective function to the model
             # Objective is to minimise total number of weeks
-            model.setObjective(week_counts.sum(), GRB.MINIMIZE)
+            self.model.setObjective(self.week_counts.sum(), GRB.MINIMIZE)
 
             # Add rank constraints to the model
             # Monsters must spend at least 1 week at D rank and 1 week at B rank on their way to S rank
-            model.addConstr(week_counts.sum("d", '*') >=
-                            1, name="D_rank_constraint")
-            model.addConstr(week_counts.sum("b", '*') >=
-                            1, name="B_rank_constraint")
+            self.model.addConstr(self.week_counts.sum("d", '*') >=
+                                 1, name="D_rank_constraint")
+            self.model.addConstr(self.week_counts.sum("b", '*') >=
+                                 1, name="B_rank_constraint")
 
             # Add maximised stats constraints to the model
             # Each stat is maximised when total gain from training exceeds the difference between 999 and the stat starting value
-            model.addConstr((week_counts.prod(
-                Lif_gains) >= 999 - initial_stat_values.at[0, "Lif"]), name="max_stats_constraint")
-
-            # 6 of these
+            self.model.addConstrs((self.week_counts.prod(
+                self.stat_gains[stat]) >= 999 - self.initial_stats.at[0, stat] for stat in self.stat_names), name="max_stats_constraint")
 
             # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
             # TODO: Write constraints to ensure this?
 
             # Optimise the model
-            model.optimize()
+            self.model.optimize()
 
-            # Output to terminal
-            if model.Status == GRB.OPTIMAL:
+            # TODO: Quantify 'overtraining'?
 
-                # Check objective vs manually calculated lower bound (23 weeks)
-                objective = int(model.getObjective().getValue())
-                assert (objective <= 23)
-
-                # Display optimal objective value
-                print(
-                    f"\nThe youngest possible max stats monster is {objective} weeks.")
-
-                # TODO: Quantify 'overtraining'?
-
-                # Breakdown of solution (training programme)
-
-                # Get details of the solution
-                count = model.getAttr('X', week_counts)
-
-                # Outline D rank weeks
-                d_total = int(count.sum("d", '*').getValue())
-                print(
-                    f"\nTraining programme breakdown:\n\n--- D rank ---\nTotal weeks: {d_total}\n")
-                for (rank, week) in week_labels.select("d", '*'):
-                    if count[rank, week] > 0:
-                        print(f"Week {week}: {int(count[rank, week])}")
-                        description = ""
-                        for stat in stat_names:
-                            description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                        print(description)
-
-                # Outline B rank weeks
-                b_total = int(count.sum("b", '*').getValue())
-                print(f"\n--- B rank ---\nTotal weeks: {b_total}\n")
-                for (rank, week) in week_labels.select("b", '*'):
-                    if count[rank, week] > 0:
-                        print(f"Week {week}: {int(count[rank, week])}")
-                        description = ""
-                        for stat in stat_names:
-                            description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                        print(description)
-
-                # Outline S rank weeks
-                s_total = int(count.sum("s", '*').getValue())
-                print(f"\n--- S rank ---\nTotal weeks: {s_total}\n")
-                for (rank, week) in week_labels.select("s", '*'):
-                    if count[rank, week] > 0:
-                        print(f"Week {week}: {int(count[rank, week])}")
-                        description = ""
-                        for stat in stat_names:
-                            description += f"   {stat}: {stat_gains[rank, week, stat]}"
-                        print(description)
+            self.print_output()
 
         except gp.GurobiError as e:
             print('Error code ' + str(e.errno) + ': ' + str(e))
 
         except AttributeError:
             print('Encountered an attribute error')
+
+
+youngest_max_stats_monster = MonsterTraining(
+    "starting-data.csv", ["d", "b", "s"]).youngest_max_stats_monster()
