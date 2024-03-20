@@ -8,6 +8,7 @@ The problem is framed as an integer linear program, with the objective of minimi
 This question was originally handed to me by Tsmuji (jack-cooper), along with a manually calculated upper bound on the number of weeks. The data used was kindly provided by SmilingFaces96.
 """
 
+import os
 import pandas as pd
 import numpy as np
 
@@ -17,18 +18,19 @@ from gurobipy import GRB
 try:
     # Read data from csv files into dataframes
     # Pandas dataframes provide convenient methods for data handling
+    filepath = os.path.dirname(__file__)
 
     # Highest possible starting values for stats
-    initial_stat_values = pd.read_csv('starting-data.csv')
+    initial_stat_values = pd.read_csv(filepath + "/starting-data.csv")
 
     # Stat gains data for all 164 possible weeks in D rank
-    D_rank_weeks_data = pd.read_csv('D-rank-data.csv')
+    D_rank_weeks_data = pd.read_csv(filepath + "/D-rank-data.csv")
 
     # Stat gains data for all 164 possible weeks in B rank
-    B_rank_weeks_data = pd.read_csv('B-rank-data.csv')
+    B_rank_weeks_data = pd.read_csv(filepath + "/B-rank-data.csv")
 
     # Stat gains data for all 164 possible weeks in S rank
-    S_rank_weeks_data = pd.read_csv('S-rank-data.csv')
+    S_rank_weeks_data = pd.read_csv(filepath + "/S-rank-data.csv")
 
     # List of rank names
     rank_names = list(["d", "b", "s"])
@@ -111,6 +113,11 @@ try:
     # Negative counts of weeks are not possible. Variables are assumed by Gurobi to be non-negative.
     # TODO: Write constraints to ensure this?
 
+    # Allow model to find n most optimal solutions
+    n = 500
+    model.setParam(GRB.Param.PoolSearchMode, 2)
+    model.setParam(GRB.Param.PoolSolutions, n)
+
     # Optimise the model
     model.optimize()
 
@@ -135,7 +142,7 @@ try:
         # Outline D rank weeks
         d_total = int(count.sum("d", '*').getValue())
         print(
-            f"\nTraining programme breakdown:\n\n--- D rank ---\nTotal weeks: {d_total}\n")
+            f"\nTraining programme breakdown for \"best\" solution:\n\n--- D rank ---\nTotal weeks: {d_total}\n")
         for (rank, week) in week_labels.select("d", '*'):
             if count[rank, week] > 0:
                 print(
